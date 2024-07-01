@@ -49,6 +49,8 @@ Ensure your `users.txt` file is formatted as follows:
 -   Passwords are securely stored in `/var/secure/user_passwords.txt`.
 -   Existing password files are backed up before any changes are made.
 
+[Article link](https://dev.to/labank_/creating-users-and-groups-with-a-bash-script-an-automated-approach-2399)
+
 ## Author
 
 [Laban Kibet](https://github.com/Laban254/)
