@@ -52,7 +52,7 @@ generate_hashed_password() {
     echo "$(openssl passwd -6 -salt xyz "$password")"
 }
 
-# Backup existing password file
+# Function to backup existing password file
 backup_password_file() {
     if [ -f "$PASSWORD_FILE" ]; then
         cp "$PASSWORD_FILE" "$BACKUP_FILE"
@@ -60,7 +60,13 @@ backup_password_file() {
     fi
 }
 
-# Create user and handle groups
+# Function to check if hashed password exists in PASSWORD_FILE
+check_password_file_contains() {
+    local password_hash="$1"
+    grep -q "^.*,${password_hash}$" "$PASSWORD_FILE"
+}
+
+# Function to process user creation
 process_user() {
     local username="$1"
     local groups="$2"
@@ -69,20 +75,29 @@ process_user() {
     if id "$username" &>/dev/null; then
         log_message "User $username already exists."
     else
-        # Create the user
-        password=$(generate_password)
-        useradd -m -s /bin/bash "$username"
-        echo "$username:$password" | chpasswd
+        # Generate a random password
+        local password=$(generate_password)
+
+        # Create the user and set the password
+        useradd -m -s /bin/bash "$username" &>/dev/null
+        echo "$username:$password" | chpasswd &>/dev/null
         log_message "User $username created successfully."
-        
-        # Generate and store hashed password
-        hashed_password=$(generate_hashed_password "$password")
-        echo "$username,$hashed_password" >> "$PASSWORD_FILE"
-        log_message "Hashed password stored for user $username."
-    fi
+
+        # Generate hashed password
+        local hashed_password=$(generate_hashed_password "$password")
+
+        # Check if password already exists in PASSWORD_FILE
+        if check_password_file_contains "$hashed_password"; then
+            log_message "Hashed password for user $username already exists in PASSWORD_FILE."
+        else
+            # Store hashed password in PASSWORD_FILE
+            echo "$username,$hashed_password" >> "$PASSWORD_FILE"
+            log_message "Hashed password stored for user $username."
+        fi
+    }
 
     # Create personal group for the user if it doesn't exist
-    personal_group="${username}_personal"
+    local personal_group="${username}_personal"
     if ! getent group "$personal_group" &>/dev/null; then
         groupadd "$personal_group"
         log_message "Personal group $personal_group created successfully."
