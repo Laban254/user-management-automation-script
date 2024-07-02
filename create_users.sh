@@ -46,12 +46,6 @@ generate_password() {
     openssl rand -base64 12
 }
 
-# Function to generate hashed password
-generate_hashed_password() {
-    local password="$1"
-    echo "$(openssl passwd -6 -salt xyz "$password")"
-}
-
 # Backup existing password file
 backup_password_file() {
     if [ -f "$PASSWORD_FILE" ]; then
@@ -74,11 +68,7 @@ process_user() {
         useradd -m -s /bin/bash "$username"
         echo "$username:$password" | chpasswd
         log_message "User $username created successfully."
-        
-        # Generate and store hashed password
-        hashed_password=$(generate_hashed_password "$password")
-        echo "$username,$hashed_password" >> "$PASSWORD_FILE"
-        log_message "Hashed password stored for user $username."
+        echo "$username,$password" >> "$PASSWORD_FILE"
     fi
 
     # Create personal group for the user if it doesn't exist
