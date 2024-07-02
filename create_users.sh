@@ -3,7 +3,7 @@
 # Script to create users and assign passwords from an input file.
 # Requires openssl for password generation and proper permissions for file handling.
 #
-# Usage: ./user_creation_script.sh <user_list_file>
+# Usage: ./create_users.sh <user_list_file>
 #
 # Example user list file format:
 # username1;group1,group2
@@ -18,23 +18,28 @@
 # Author: [Your Name]
 # Date: [Date]
 
+# Check for superuser privileges
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script must be run as root. Use sudo."
+    exit 1
+fi
+
 # Define log file and secure password file
 LOG_FILE="/var/log/user_management.log"
-PASSWORD_FILE="/var/secure/user_passwords.txt"
-BACKUP_FILE="/var/secure/user_passwords.txt.bak"
+PASSWORD_FILE="/var/secure/user_passwords.csv"
+BACKUP_FILE="/var/secure/user_passwords.csv.bak"
 
 # Create necessary directories and set permissions
 mkdir -p /var/secure
 touch "$LOG_FILE"
 touch "$PASSWORD_FILE"
 
-chmod 644 "$LOG_FILE"
-chmod 400 "$PASSWORD_FILE"
+chmod 600 "$PASSWORD_FILE"
+chown root:root "$PASSWORD_FILE"
 
 # Function to log messages
 log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
-    [ "$verbose" = true ] && echo "$1"
 }
 
 # Function to handle errors and log messages
@@ -89,32 +94,31 @@ while IFS=';' read -r raw_username raw_groups; do
         continue
     fi
 
-    # Create personal group with error handling
+    # Create personal group
     if ! getent group "$username" &>/dev/null; then
-        if [ "$dry_run" = false ]; then
-            if ! groupadd "$username"; then
-                handle_error "⛔ Failed to create group $username."
-            else
-                log_message "Group $username created."
-            fi
+        if ! groupadd "$username"; then
+            handle_error "⛔ Failed to create group $username."
         else
-            log_message "Simulated creation of group $username."
+            log_message "Group $username created."
         fi
     fi
 
-    # Create user and home directory with error handling
-    if [ "$dry_run" = false ]; then
-        if ! useradd -m -g "$username" -s /bin/bash "$username"; then
-            handle_error "⛔ Failed to create user $username."
-            continue
-        else
-            log_message "User $username created with home directory."
-        fi
+    # Create user and home directory 
+    if ! useradd -m -g "$username" -s /bin/bash "$username"; then
+        handle_error "⛔ Failed to create user $username."
+        continue
     else
-        log_message "Simulated creation of user $username with home directory."
+        log_message "User $username created with home directory."
     fi
 
-    # Assign additional groups with error handling
+    # Assign user to their personal group 
+    if ! usermod -g "$username" "$username"; then
+        handle_error "⛔ Failed to add user $username to their personal group."
+    else
+        log_message "User $username added to their personal group."
+    fi
+
+    # Assign additional groups 
     IFS=',' read -ra ADDR <<< "$groups"
     for group in "${ADDR[@]}"; do
         group=$(echo "$group" | xargs) # Trim whitespaces
@@ -122,38 +126,26 @@ while IFS=';' read -r raw_username raw_groups; do
             continue
         fi
         if ! getent group "$group" &>/dev/null; then
-            if [ "$dry_run" = false ]; then
-                if ! groupadd "$group"; then
-                    handle_error "⛔ Failed to create group $group."
-                else
-                    log_message "Group $group created."
-                fi
+            if ! groupadd "$group"; then
+                handle_error "⛔ Failed to create group $group."
             else
-                log_message "Simulated creation of group $group."
+                log_message "Group $group created."
             fi
         fi
-        if [ "$dry_run" = false ]; then
-            if ! usermod -aG "$group" "$username"; then
-                handle_error "⛔ Failed to add user $username to group $group."
-            else
-                log_message "User $username added to group $group."
-            fi
+        if ! usermod -aG "$group" "$username"; then
+            handle_error "⛔ Failed to add user $username to group $group."
         else
-            log_message "Simulated addition of user $username to group $group."
+            log_message "User $username added to group $group."
         fi
     done
 
     # Generate and assign hashed password
     password=$(openssl rand -base64 12)
     hashed_password=$(generate_hashed_password "$password")
-    if [ "$dry_run" = false ]; then
-        echo "$username:$hashed_password" >> "$PASSWORD_FILE"
-        log_message "Hashed password stored for user $username."
-    else
-        log_message "Simulated hashed password setting for user $username."
-    fi
+    echo "$username,$password" >> "$PASSWORD_FILE"
+    log_message "Password stored for user $username."
 done < "$USER_LIST_FILE"
 
 log_message "User creation process completed with $error_count errors."
 echo "📯 User creation process completed with $error_count errors."
-echo "Check $LOG_FILE for details and $PASSWORD_FILE for hashed passwords."
+echo "Check $LOG_FILE for details and $PASSWORD_FILE for passwords."
